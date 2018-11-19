@@ -535,6 +535,15 @@ controllerManagerExtraVolumes:
     mountPath: /etc/kubernetes/cloud-config
 EOF
 
+TOKEN="{{ .Token }}"
+if [[ "${TOKEN}" == "nil" ]] || [[ "${TOKEN}" == "null" ]]; then
+    TOKEN=""
+fi
+if [ -n "${TOKEN}" ]; then
+    echo "token: ${TOKEN}" >> /etc/kubernetes/kubeadm_config.yaml
+fi
+
+
 kubeadm init --config /etc/kubernetes/kubeadm_config.yaml
 
 # install weave

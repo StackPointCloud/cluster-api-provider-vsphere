@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/cluster-api/pkg/kubeadm"
 )
 
-func (pv *Provisioner) GetKubeadmToken(cluster *clusterv1.Cluster) (string, error) {
+func (pv *Provisioner) GetKubeadmTokenPreconfigured(cluster *clusterv1.Cluster) (string, error) {
 	var token string
 	if cluster.ObjectMeta.Annotations != nil {
 		if token, ok := cluster.ObjectMeta.Annotations[constants.KubeadmToken]; ok {
@@ -26,6 +26,17 @@ func (pv *Provisioner) GetKubeadmToken(cluster *clusterv1.Cluster) (string, erro
 				return token, nil
 			}
 		}
+	}
+	return token, nil
+}
+
+func (pv *Provisioner) GetKubeadmToken(cluster *clusterv1.Cluster) (string, error) {
+	token, err := pv.GetKubeadmTokenPreconfigured(cluster)
+	if err != nil {
+		return "", err
+	}
+	if token != "" {
+		return token, nil
 	}
 	// From the cluster locate the master node
 	master, err := vsphereutils.GetMasterForCluster(cluster, pv.lister)

@@ -521,8 +521,14 @@ func (pv *Provisioner) getStartupScript(cluster *clusterv1.Cluster, machine *clu
 				"invalid master configuration: missing Machine.Spec.Versions.ControlPlane"), constants.CreateEventAction)
 		}
 		var err error
+		kubeadmToken, err := pv.GetKubeadmTokenPreconfigured(cluster)
+		if err != nil {
+			glog.Infof("Error generating kubeadm token, will requeue: %s", err.Error())
+			return "", &clustererror.RequeueAfterError{RequeueAfter: constants.RequeueAfterSeconds}
+		}
 		startupScript, err = vpshereprovisionercommon.GetMasterStartupScript(
 			vpshereprovisionercommon.TemplateParams{
+				Token:     kubeadmToken,
 				Cluster:   cluster,
 				Machine:   machine,
 				Preloaded: preloaded,
