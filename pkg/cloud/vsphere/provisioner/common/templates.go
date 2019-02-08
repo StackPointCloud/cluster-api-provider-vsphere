@@ -370,41 +370,33 @@ echo done.
 const nodeStartupScript = `
 {{ define "install" -}}
 
-apt-get update
-apt-get install -y apt-transport-https prips
-apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys F76221572C52609D
-
-cat <<EOF > /etc/apt/sources.list.d/k8s.list
-deb [arch=amd64] https://apt.dockerproject.org/repo ubuntu-xenial main
-EOF
+KUBELET_VERSION={{ .Machine.Spec.Versions.Kubelet }}
 
 apt-get update
-apt-get install -y docker.io
+apt-get install -y apt-transport-https prips software-properties-common
+
+curl -fsSL https://download.docker.com/linux/debian/gpg | sudo apt-key add -
+
+sudo add-apt-repository \
+   "deb [arch=amd64] https://download.docker.com/linux/debian \
+   $(lsb_release -cs) \
+   stable"
+
+apt-get update
+apt-get install -y --allow-downgrades docker-ce=17.06.0~ce-0~debian
 
 curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
 
-cat <<EOF > /etc/apt/sources.list.d/kubernetes.list
-deb http://apt.kubernetes.io/ kubernetes-xenial main
+cat <<EOF >/etc/apt/sources.list.d/kubernetes.list
+deb https://apt.kubernetes.io/ kubernetes-xenial main
 EOF
+
 apt-get update
 
-KUBELET_VERSION={{ .Machine.Spec.Versions.Kubelet }}
-# Our Debian packages have versions like "1.8.0-00" or "1.8.0-01". Do a prefix
-# search based on our SemVer to find the right (newest) package version.
-function getversion() {
-	name=$1
-	prefix=$2
-	version=$(apt-cache madison $name | awk '{ print $3 }' | grep ^$prefix | head -n1)
-	if [[ -z "$version" ]]; then
-		echo Can\'t find package $name with prefix $prefix
-		exit 1
-	fi
-	echo $version
-}
 
-KUBELET=$(getversion kubelet ${KUBELET_VERSION}-)
-KUBEADM=$(getversion kubeadm ${KUBELET_VERSION}-)
-KUBECTL=$(getversion kubectl ${KUBELET_VERSION}-)
+KUBELET=${KUBELET_VERSION}-00
+KUBEADM=${KUBELET_VERSION}-00
+KUBECTL=${KUBELET_VERSION}-00
 # Explicit cni version is a temporary workaround till the right version can be automatically detected correctly
 apt-get install -y kubelet=${KUBELET} kubeadm=${KUBEADM} kubectl=${KUBECTL}
 
@@ -419,7 +411,6 @@ NODE_TAINTS_OPTION={{ if .Machine.Spec.Taints }}--register-with-taints={{ taintM
 
 # Disable swap otherwise kubelet won't run
 swapoff -a
-sed -i '/ swap / s/^/#/' /etc/fstab
 
 systemctl enable docker || true
 systemctl start docker || true
@@ -451,48 +442,45 @@ const masterStartupScript = `
 
 KUBELET_VERSION={{ .Machine.Spec.Versions.Kubelet }}
 
+apt-get update
+
+sudo apt-get install -y \
+    socat \
+    ebtables \
+    apt-transport-https \
+    ca-certificates \
+    curl \
+    gnupg2 \
+    jq \
+    cloud-utils \
+    prips \
+    software-properties-common
+
+curl -fsSL https://download.docker.com/linux/debian/gpg | sudo apt-key add -
+
+sudo add-apt-repository \
+    "deb [arch=amd64] https://download.docker.com/linux/debian \
+    $(lsb_release -cs) \
+    stable"
+
+apt-get update
+
+apt-get install -y --allow-downgrades docker-ce=17.06.0~ce-0~debian
+
 curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
-touch /etc/apt/sources.list.d/kubernetes.list
-sh -c 'echo "deb http://apt.kubernetes.io/ kubernetes-xenial main" > /etc/apt/sources.list.d/kubernetes.list'
+
+cat <<EOF >/etc/apt/sources.list.d/kubernetes.list
+deb https://apt.kubernetes.io/ kubernetes-xenial main
+EOF
+
+swapoff -a
 
 apt-get update -y
 
 apt-get install -y \
-    socat \
-    ebtables \
-    docker.io \
-    apt-transport-https \
-    cloud-utils \
-    prips
+    kubelet=${KUBELET_VERSION}-00 \
+    kubeadm=${KUBELET_VERSION}-00
 
-export VERSION=v${KUBELET_VERSION}
-export ARCH=amd64
-curl -sSL https://dl.k8s.io/release/${VERSION}/bin/linux/${ARCH}/kubeadm > /usr/bin/kubeadm.dl
-chmod a+rx /usr/bin/kubeadm.dl
-
-# Our Debian packages have versions like "1.8.0-00" or "1.8.0-01". Do a prefix
-# search based on our SemVer to find the right (newest) package version.
-function getversion() {
-	name=$1
-	prefix=$2
-	version=$(apt-cache madison $name | awk '{ print $3 }' | grep ^$prefix | head -n1)
-	if [[ -z "$version" ]]; then
-		echo Can\'t find package $name with prefix $prefix
-		exit 1
-	fi
-	echo $version
-}
-
-KUBELET=$(getversion kubelet ${KUBELET_VERSION}-)
-KUBEADM=$(getversion kubeadm ${KUBELET_VERSION}-)
-
-# Explicit cni version is a temporary workaround till the right version can be automatically detected correctly
-apt-get install -y \
-    kubelet=${KUBELET} \
-    kubeadm=${KUBEADM}
-
-mv /usr/bin/kubeadm.dl /usr/bin/kubeadm
-chmod a+rx /usr/bin/kubeadm
 {{- end }}{{/* end install */}}
 
 
@@ -508,7 +496,6 @@ NODE_TAINTS_OPTION={{ if .Machine.Spec.Taints }}--register-with-taints={{ taintM
 
 # Disable swap otherwise kubelet won't run
 swapoff -a
-sed -i '/ swap / s/^/#/' /etc/fstab
 
 systemctl enable docker
 systemctl start docker
